@@ -17,7 +17,7 @@ This project uses a warehouse receiving scenario to show how an AI-assisted work
 - classify the record as ready or requiring review
 - preserve the decision in a database audit log
 
-The current input is simulated warehouse receiving test data inside the n8n workflow. It is not yet connected to CSV, PDF, email, API or ERP sources.
+The current input is simulated warehouse receiving test data inside the n8n workflow. It is not yet connected to CSV, PDF, email, API or ERP sources. The example values are synthetic and do not represent a real shipment or confidential company dataset.
 
 ## What Is Implemented
 
@@ -283,13 +283,35 @@ AI-Process-Lab/
 
 `docs/`, `examples/` and `prompts/` are reserved for future documentation, sample data and prompt assets.
 
+## Repository Evidence
+
+| Capability | Repository evidence | Verification limit |
+|---|---|---|
+| AI-assisted analysis with a local Ollama model | [`workflows/01 - AI Document Analyzer.json`](workflows/01%20-%20AI%20Document%20Analyzer.json) | Workflow definition is included; Ollama and its model must be configured locally |
+| Structured output parsing and normalized workflow fields | [`workflows/01 - AI Document Analyzer.json`](workflows/01%20-%20AI%20Document%20Analyzer.json) | Implemented in the workflow export |
+| `OK` / `REVIEW_REQUIRED` decision routing | [`workflows/01 - AI Document Analyzer.json`](workflows/01%20-%20AI%20Document%20Analyzer.json) | Uses synthetic input and a manual trigger |
+| PostgreSQL audit-log write | [`workflows/01 - AI Document Analyzer.json`](workflows/01%20-%20AI%20Document%20Analyzer.json) | PostgreSQL credentials and runtime results are not included |
+| Reproducible audit-table schema and unique record IDs | [`V1__create_ai_process_log.sql`](database/migrations/V1__create_ai_process_log.sql) and [`V2__add_unique_record_id.sql`](database/migrations/V2__add_unique_record_id.sql) | Migrations cover the current PoC schema, not a production reporting model |
+| Persistent Docker services and internal database networking | [`docker-compose.yml`](docker-compose.yml) | Local development configuration; not a production deployment template |
+| Environment-based configuration | [`.env.example`](.env.example) and [`.gitignore`](.gitignore) | Placeholder configuration only; n8n credentials remain inside the local n8n instance |
+
 ## Current Limitations
 
 - Input is currently simulated inside the n8n workflow.
+- The exported workflow is inactive and starts with a manual trigger.
 - CSV, PDF, email, API and ERP ingestion are not implemented yet.
 - Ollama is an external local prerequisite.
-- n8n credentials are configured manually inside n8n.
-- The workflow is a focused portfolio demo, not a production deployment template.
+- n8n and PostgreSQL credentials are configured manually inside n8n.
+- No automated test suite, CI workflow, production monitoring or retry strategy is included.
+- The public environment example uses `n8nio/n8n:latest`; an exact n8n version is not pinned.
+- The PostgreSQL schema is a focused audit-log model and is not hardened for production reporting or retention requirements.
+- The workflow is a local proof of concept, not a production deployment template.
+
+## Status
+
+**Functional local proof of concept.**
+
+The repository contains the workflow, Docker configuration and SQL schema required to inspect and reproduce the current demo with locally configured dependencies. No production deployment, live ERP integration or real warehouse-data claim is made.
 
 ## Roadmap
 
