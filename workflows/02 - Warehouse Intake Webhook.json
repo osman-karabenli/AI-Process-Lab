@@ -1,0 +1,110 @@
+{
+  "name": "02 - Warehouse Intake Webhook (CSV/PDF to PostgreSQL)",
+  "nodes": [
+    {
+      "id": "warehouse-intake-webhook",
+      "name": "Warehouse Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "warehouse-receiving-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "warehouse-receiving-v1"
+    },
+    {
+      "id": "revalidate-record",
+      "name": "Revalidate Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Validation is performed again in n8n, never blindly trusting the CSV client.\nconst body = $input.first().json.body;\nif (!body || body.schema_version !== '1.0' || !['csv', 'pdf', 'image'].includes(body.source_type)) {\n  throw new Error('Unsupported or missing schema_version/source_type');\n}\nconst r = body.record;\nif (!r || typeof r !== 'object' || !/^REC-[a-f0-9]{16}-[0-9]{5}$/.test(r.record_id || '')) {\n  throw new Error('Invalid record_id');\n}\nconst norm = value => typeof value === 'string' ? value.trim() : '';\nconst supplier = norm(r.supplier);\nconst material = norm(r.material);\nif (supplier.length > 255 || material.length > 255) {\n  throw new Error('Supplier/material exceeds database length limit');\n}\nconst quantity = (Number.isSafeInteger(r.quantity) && r.quantity > 0) ? r.quantity : null;\nconst missing = [];\nconst errors = [];\nif (!supplier) missing.push('supplier');\nif (!material) missing.push('material');\nif (r.quantity === null || r.quantity === undefined || r.quantity === '') {\n  missing.push('quantity');\n} else if (quantity === null) {\n  errors.push('quantity_must_be_positive_integer');\n}\nconst clientErrors = Array.isArray(r.errors) ? r.errors : [];\nif (clientErrors.includes('quantity_must_be_positive_integer') &&\n    !errors.includes('quantity_must_be_positive_integer')) {\n  errors.push('quantity_must_be_positive_integer');\n}\nconst needsReview = body.source_type !== 'csv' ||\n  missing.length > 0 || errors.length > 0 ||\n  r.status === 'REVIEW_REQUIRED' ||\n  (Array.isArray(r.review_reasons) && r.review_reasons.length > 0);\nconst status = needsReview ? 'REVIEW_REQUIRED' : 'OK';\nreturn [{\n  json: {\n    record_id: r.record_id,\n    supplier: supplier || null,\n    material: material || null,\n    quantity,\n    status,\n    missing_fields: missing,\n    errors,\n    process_step: needsReview ? 'Manual Review' : 'Ready Processing',\n    workflow_name: 'Warehouse CSV/PDF n8n Import',\n    workflow_version: '2.0'\n  }\n}];"
+      }
+    },
+    {
+      "id": "write-audit-to-postgresql",
+      "name": "Write Audit to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        140,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH inserted_row AS (\n  INSERT INTO ai_process_log (\n    record_id, supplier, material, quantity, status,\n    missing_fields, process_step, created_at, workflow_name, workflow_version\n  ) VALUES (\n    $1, $2, $3, $4::integer, $5,\n    $6::jsonb, $7, NOW(), $8, $9\n  )\n  ON CONFLICT (record_id) DO NOTHING\n  RETURNING record_id, status, missing_fields\n)\nSELECT record_id, status, missing_fields, TRUE AS inserted FROM inserted_row\nUNION ALL\nSELECT t.record_id, t.status, t.missing_fields, FALSE AS inserted\nFROM ai_process_log AS t\nWHERE t.record_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted_row);",
+        "options": {
+          "queryReplacement": "={{ [ $json.record_id, $json.supplier, $json.material, $json.quantity, $json.status, JSON.stringify($json.missing_fields), $json.process_step, $json.workflow_name, $json.workflow_version ] }}",
+          "queryBatching": "independently"
+        }
+      }
+    },
+    {
+      "id": "acknowledge-saved-record",
+      "name": "Acknowledge Saved Record",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Warehouse Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Revalidate Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revalidate Record": {
+      "main": [
+        [
+          {
+            "node": "Write Audit to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Audit to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Saved Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
