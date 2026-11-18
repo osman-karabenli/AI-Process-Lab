@@ -15,3 +15,11 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m unittest discover -s tests -v
+      - name: Generate JSON report from demo CSV
+        run: python -m warehouse_validator.validator examples/warehouse_receiving_demo.csv --output warehouse_receiving_demo_report.json
+      - name: Upload demo JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: warehouse-demo-result
+          path: warehouse_receiving_demo_report.json
+          retention-days: 14
